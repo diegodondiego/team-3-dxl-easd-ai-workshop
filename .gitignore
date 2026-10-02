@@ -6,3 +6,4 @@ report.html
 portal.json
 submissions/*/
 .env
+.idea/
