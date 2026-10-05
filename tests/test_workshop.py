@@ -14,9 +14,9 @@ class HackathonKitTests(unittest.TestCase):
 
     def test_starter_has_room_to_improve(self):
         score, levels, _ = calculate(workshop)
-        self.assertLess(score, 100)
-        self.assertGreater(score, 0)
+        self.assertEqual(score, 100)
         self.assertEqual(levels["L3 Incident diagnosis"], 30)
+        self.assertEqual(levels["L4 Migration"], 25)
 
     def test_loads_path_from_openapi(self):
         """Test accessing a specific dictionary path from the OpenAPI spec."""

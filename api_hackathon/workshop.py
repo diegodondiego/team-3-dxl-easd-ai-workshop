@@ -24,6 +24,21 @@ def check_if_endpoint_exists(spec: dict, path: str, method: str) -> bool:
     """Check if the endpoint exists in the OpenAPI spec."""
     return path in spec.get("paths", {}) and method.lower() in spec["paths"][path]
 
+def get_parameter(spec: dict, path: str, method: str, param_name: str) -> dict | None:
+    """Find a parameter definition by name for a given endpoint in the OpenAPI spec."""
+    path_item = spec.get("paths", {}).get(path, {})
+    if not isinstance(path_item, dict):
+        return None
+    operation = path_item.get(method.lower(), {})
+    if isinstance(operation, dict):
+        for param in operation.get("parameters", []):
+            if isinstance(param, dict) and param.get("name") == param_name:
+                return param
+    for param in path_item.get("parameters", []):
+        if isinstance(param, dict) and param.get("name") == param_name:
+            return param
+    return None
+
 def find_nested_keys(spec: dict, target_key: str):
     """Return {target_key: [val1, val2, ...]}."""
     def _search(obj):
@@ -211,4 +226,34 @@ def review_migration(v1: dict, v2: dict, ai) -> list[dict]:
       "schema_changed"          -- parameter["schema"] differs between v1 and v2.
                                    If the schemas are identical the claim is false.
     """
-    return ai.ask("migration_review", {"v1": v1, "v2": v2})
+
+    findings = ai.ask("migration_review", {"v1": v1, "v2": v2})
+    valid_findings = []
+
+    for finding in findings:
+        kind = finding.get("kind")
+        path = finding.get("path")
+        method = (finding.get("method") or "").lower()
+        param_name = finding.get("parameter")
+
+        if kind == "operation_removed":
+            if check_if_endpoint_exists(v1, path, method) and not check_if_endpoint_exists(v2, path, method):
+                valid_findings.append(finding)
+        elif kind == "parameter_became_required":
+            param_v1 = get_parameter(v1, path, method, param_name)
+            param_v2 = get_parameter(v2, path, method, param_name)
+            if param_v1 is not None and param_v2 is not None:
+                req_v1 = bool(param_v1.get("required", False))
+                req_v2 = bool(param_v2.get("required", False))
+                if not req_v1 and req_v2:
+                    valid_findings.append(finding)
+        elif kind == "schema_changed":
+            param_v1 = get_parameter(v1, path, method, param_name)
+            param_v2 = get_parameter(v2, path, method, param_name)
+            if param_v1 is not None and param_v2 is not None:
+                schema_v1 = param_v1.get("schema")
+                schema_v2 = param_v2.get("schema")
+                if schema_v1 is not None and schema_v2 is not None and schema_v1 != schema_v2:
+                    valid_findings.append(finding)
+
+    return valid_findings
