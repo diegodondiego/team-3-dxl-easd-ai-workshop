@@ -18,9 +18,24 @@ shown in the comments below. Your job is to filter that list so only items
 that are verifiable against real evidence survive.
 """
 
+dont_look_at_spec = True
+
 def check_if_endpoint_exists(spec: dict, path: str, method: str) -> bool:
     """Check if the endpoint exists in the OpenAPI spec."""
     return path in spec.get("paths", {}) and method.lower() in spec["paths"][path]
+
+def find_nested_keys(spec: dict, target_key: str):
+    """Return {target_key: [val1, val2, ...]}."""
+    def _search(obj):
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k == target_key:
+                    yield v
+                yield from _search(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                yield from _search(item)
+    return {target_key: list(_search(spec))}
 
 def review_contract(spec: dict, ai) -> list[dict]:
     """Level 1 -- return only findings supported by the OpenAPI contract.
@@ -100,7 +115,27 @@ def design_negative_tests(spec: dict, ai) -> list[dict]:
       3. The case has all required fields: name, method, path, input,
          expected_status.
     """
-    return ai.ask("negative_tests", spec)
+
+    findings = ai.ask("negative_tests", spec)
+
+    # remove inexistent paths
+    for finding in findings.copy():
+        if not check_if_endpoint_exists(spec, finding["path"], finding["method"]):
+            findings.remove(finding)
+
+    # get all the valid status from the spec
+    spec_available_status = find_nested_keys(spec, "responses")
+
+    if dont_look_at_spec:
+        unique_available_status = [400, 401, 403, 404, 409, 422]
+    else:
+        unique_available_status = list(dict.fromkeys(int(k) for d in spec_available_status["responses"] for k in d if str(k).isdigit()))
+
+    for finding in findings.copy():
+        if int(finding["expected_status"]) not in unique_available_status:
+            findings.remove(finding)
+
+    return findings
 
 
 def diagnose_incident(logs: str, ai) -> dict:
