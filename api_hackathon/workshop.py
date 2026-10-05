@@ -18,6 +18,9 @@ shown in the comments below. Your job is to filter that list so only items
 that are verifiable against real evidence survive.
 """
 
+def check_if_endpoint_exists(spec: dict, path: str, method: str) -> bool:
+    """Check if the endpoint exists in the OpenAPI spec."""
+    return path in spec.get("paths", {}) and method.lower() in spec["paths"][path]
 
 def review_contract(spec: dict, ai) -> list[dict]:
     """Level 1 -- return only findings supported by the OpenAPI contract.
@@ -51,7 +54,18 @@ def review_contract(spec: dict, ai) -> list[dict]:
          "/paths/~1orders/get" is spec["paths"]["/orders"]["get"].
          It is not "//orders" -- the slash belongs to the key name "/orders".
     """
-    return ai.ask("contract_review", spec)
+    findings = ai.ask("contract_review", spec)
+
+    valid_findings = []
+    for finding in findings:
+        path = finding.get("path")
+        method = (finding.get("method") or "").lower()
+
+        # Check if endpoint exists in spec
+        if check_if_endpoint_exists(spec, path, method):
+            valid_findings.append(finding)
+
+    return valid_findings
 
 
 def design_negative_tests(spec: dict, ai) -> list[dict]:
